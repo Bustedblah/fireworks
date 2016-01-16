@@ -36,7 +36,11 @@ elif num_players == 2 or 3:
 else:
     cards_per_hand = 0
     # TODO: Break out of this loop and Error
-    
+
+total_num_cards = 0
+for num in default_card_struct:
+    total_num_cards = total_num_cards + num*num_colors_in_play
+
 #####################################################################
 # Initialize Node Type and Clean the Database
 #####################################################################
@@ -103,7 +107,7 @@ while k < num_players:
     h_node_name = db.nodes.create(name=h_name)
     hand.add(h_node_name)
     
-    p_node_name.relationships.create("controls", h_node_name)
+    p_node_name.relationships.create("CONTROLS", h_node_name)
     
     k += 1
     
@@ -170,10 +174,10 @@ for game_card in game_deck:
     c_node_name = db.nodes.create(name=c_name,order=key,value=game_card.number,color=game_card.color)
     card.add(c_node_name)
     
-    dr_d_node_name.relationships.create("contains", c_node_name)
+    dr_d_node_name.relationships.create("CONTAINS", c_node_name)
     
     if k == 0:
-        tc_node_name.relationships.create("is", c_node_name)
+        tc_node_name.relationships.create("IS", c_node_name)
     
     k += 1
     
@@ -181,60 +185,90 @@ for game_card in game_deck:
 # DEAL CARDS TO THE PLAYERS
 #####################################################################    
 
-done = 0;
+done = 0
 # NOTE:  The following code is extremely non-ideal.  Make it better when you can figure out how to do it cleaner
-while done == 0:
-    q = 'MATCH (h:Hand) WHERE NOT (h)-[:contains]->(:Card) RETURN h.name, count(*)'
+while done == 0:  
+    q = 'MATCH (h:Hand) WHERE (h)-[:CONTAINS]->(:Card) RETURN h.name, count(*)'  
     results = db.query(q, returns=(str, int))
-    
     if results.elements == []:
+        #Add one card to each hand
         q = 'MATCH (h:Hand) RETURN h.name'
-        results = db.query(q, returns=(str))
-        
-        # Find the top card
-        q = 'MATCH (c:Card) WHERE (t:Top_Card)-[:is]->(c) RETURN c.name'
-        results = db.query(q, returns=(str))
-        
-        # Move top card to the next card
-        
-        # Then remove the old top card from the deck
-        # Then add a card to those hands
-        
-        
-    else:     
-        q = 'MATCH (h:Hand)-[:contains]->(c:Card) WHERE count(*) < ' + str(cards_per_hand) + ' RETURN h, count(*)'
-        results = db.query(q, returns=(str, int))
-        # Then add additional cards to the hands until all the cards are in the hands.
-
-        done = 1
+        results_2 = db.query(q, returns=(str))
+        for r in results_2:
+            name_of_the_hand = r[0]
+            add_top_card_to_a_hand(name_of_the_hand)
     else:
         for r in results:
-            r[0].relationships.create("controls", r[1])
+            name_of_the_hand = r[0]
+            cards_in_this_hand = r[1]
+            while cards_in_this_hand < cards_per_hand:
+                add_top_card_to_a_hand(name_of_the_hand)
+                cards_in_this_hand += 1
+    
+     
+#####################################################################
+# PLAYERS OPEN THEIR EYES 
+#####################################################################
+q = 'MATCH (h:Hand), (c:Card), (p:Player) WHERE NOT (h)-[:CONTAINS]->(c) AND NOT (:Deck { name:"Draw_Deck" })-[:CONTAINS]->(c) AND (p)-[:CONTROLS]->(h) CREATE (h)-[:CAN_SEE]->(c)'
+results = db.query(q)
 
+#######################################################################
+#######################################################################
+######################## THE GAME BEGINS !!!!##########################
+#######################################################################
+#######################################################################
+
+
+
+#####################################################################
+# PLAYERS STARTS TO THINK
+#####################################################################
+
+
+
+    
+
+#####################################################################
+# DEFINE FUNCTION: 
+###############################################################
+
+################## ADD TOP CARD TO THE HAND ###################
+def add_top_card_to_a_hand(name_of_the_hand):
+
+    # Find the name and order # of the top card
+    q = 'MATCH (c:Card) WHERE (:Token { name:"Top_Card" })-[:IS]->(c) RETURN c.name, c.order'
+    results_c_order = db.query(q, returns=(str, int))
+    
+    if results_c_order != []:
+        name_of_old_top_card = results_c_order[0][0]
+        order_of_top_card = results_c_order[0][1]
         
+        if order_of_top_card < total_num_cards:
+            # Make the next card the top card
+            q = 'MATCH (t:Token {name:"Top_Card"}), (c:Card {order:' + str(order_of_top_card+1) + '}) CREATE (t)-[:IS]->(c)'
+            results_blank = db.query(q)
+    
+        # Remove the old top card from being the top card
+        q = 'START t=node(*) MATCH t-[rel:IS]->c WHERE t.name="Top_Card" AND c.name="' + name_of_old_top_card + '" DELETE rel'
+        results_blank = db.query(q)
+        # Remove the old top card from the deck
+        q = 'START d=node(*) MATCH d-[rel:CONTAINS]->c WHERE d.name = "Draw_Deck" AND c.name= "' + name_of_old_top_card + '" DELETE rel'
+        results_blank = db.query(q)
+
+        # Add that card to the present hand
+        q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (c:Card {name: "' + name_of_old_top_card + '" }) CREATE (h)-[:CONTAINS]->(c)'
+        results_blank = db.query(q)
+         
+################## SEE IF THERE ARE LESS THAN X NUMBER OF CARDS IN THE HANDS ###################
+def check_num_cards_per_hand():
+    done = 1
+    q = 'MATCH (h:Hand) RETURN h.name'
+    results_3 = db.query(q, returns=(str))
+    for r in results_3:
+        name_of_the_hand = r[0]
+        q = 'MATCH (h:Hand {name="' + name_of_the_hand + '") WHERE (h)-[:CONTAINS]->(:Card) RETURN count(*)'  
+        results_4 = db.query(q, returns=(int))
+        if results[0] != cards_per_hand:
+            done = 0
+    return done    
         
-
-for game_cards in game_deck:
-    print("(%s)-[%s]->(%s)" % (r[0]["name"], r[1], r[2]["name"]))
-
-# The output:
-# (Marco)-[likes]->(Punk IPA)
-# (Marco)-[likes]->(Hoegaarden Rosee)
-    
-
-#####################################################################
-# PLAYERS LOOK AT OTHER CARDS 
-#####################################################################
-
-
-
-#####################################################################
-# A PLAYERS STARTS TO THINK
-#####################################################################
-
-
-
-    
-
-
-    
