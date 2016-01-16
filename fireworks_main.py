@@ -70,7 +70,6 @@ info_token_list_nodes = {}
 w_answer_token_list_names = {}
 w_answer_token_list_nodes = {}
 
-
 p_name = 'blank'
 p_node_name = 'p0'
 h_name = 'blank'
@@ -110,7 +109,7 @@ while k < num_players:
     p_node_name.relationships.create("CONTROLS", h_node_name)
     
     k += 1
-    
+        
 #####################################################################
 # SET-UP GAME PIECES
 #####################################################################    
@@ -122,9 +121,13 @@ draw_deck_name = "Draw_Deck"
 draw_deck_node_name = "dr_d"
 discard_deck_name = "Discard_Deck"
 discard_deck_node_name = "dis_d"
+player_turn_name = "Player_Turn"
+player_turn_node_name = "pt"
 
 tc_node_name = db.nodes.create(name=top_card_name)
 token.add(tc_node_name)
+pt_node_name = db.nodes.create(name=player_turn_name)
+token.add(pt_node_name)
 dr_d_node_name = db.nodes.create(name=draw_deck_name)
 deck.add(dr_d_node_name)
 dis_d_node_name = db.nodes.create(name=discard_deck_name)
@@ -154,6 +157,22 @@ while k < num_wrong_answer_tokens:
     token.add(wa_node_name)
     k += 1
     
+# Establishing who goes first in what order
+k = 0
+q = 'MATCH (p:Player) RETURN p.name'
+results = db.query(q, returns=(str))
+while k < num_players:
+    key = k
+    key2 = k+1
+    if key+1 == num_players:
+        key2 = 0
+    q = 'MATCH (p1:Player {name: "' + results[key][0] + '" }), (p2:Player {name: "' + results[key2][0] + '" }) CREATE (p1)-[:PLAYS_BEFORE]->(p2)'
+    results_blank = db.query(q)
+    if k == 0:
+        q = 'MATCH (t:Token {name: "Player_Turn" }), (p:Player {name: "' + results[key][0] + '" }) CREATE (t)-[:PIS]->(p)'
+    results_blank = db.query(q)
+    k += 1 
+       
 #####################################################################
 # SET-UP THE DECK
 #####################################################################
@@ -180,7 +199,7 @@ for game_card in game_deck:
         tc_node_name.relationships.create("IS", c_node_name)
     
     k += 1
-    
+
 #####################################################################
 # DEAL CARDS TO THE PLAYERS
 #####################################################################    
