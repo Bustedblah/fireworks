@@ -1,6 +1,6 @@
 #!/opt/local/bin/python
-# 
-# 
+#
+#
 
 #####################################################################
 # Import Modules
@@ -12,6 +12,53 @@ from oct2py import octave
 from hanabi_classes import hanabi_card  # NOTE: Not sure if i need to do this.
 from hanabi_classes import hanabi_deck
 
+###############################################################
+# DEFINE FUNCTION: 
+###############################################################
+
+
+################## ADD TOP CARD TO THE HAND ###################
+def add_top_card_to_a_hand(name_of_the_hand,total_num_cards):
+
+    # Find the name and order # of the top card
+    q = 'MATCH (c:Card) WHERE (:Token { name:"Top_Card" })-[:IS]->(c) RETURN c.name, c.order'
+    results_c_order = db.query(q, returns=(str, int))
+    print results_c_order[0]
+    
+    if results_c_order != []:
+        name_of_old_top_card = results_c_order[0][0]
+        order_of_top_card = results_c_order[0][1]
+        
+        if order_of_top_card < total_num_cards:
+            # Make the next card the top card
+            q = 'MATCH (t:Token {name:"Top_Card"}), (c:Card {order:' + str(order_of_top_card+1) + '}) CREATE (t)-[:IS]->(c)'
+            results_blank = db.query(q)
+    
+        # Remove the old top card from being the top card
+        q = 'START t=node(*) MATCH t-[rel:IS]->c WHERE t.name="Top_Card" AND c.name="' + name_of_old_top_card + '" DELETE rel'
+        results_blank = db.query(q)
+        # Remove the old top card from the deck
+        q = 'START d=node(*) MATCH d-[rel:CONTAINS]->c WHERE d.name = "Draw_Deck" AND c.name= "' + name_of_old_top_card + '" DELETE rel'
+        results_blank = db.query(q)
+
+        # Add that card to the present hand
+        q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (c:Card {name: "' + name_of_old_top_card + '" }) CREATE (h)-[:CONTAINS]->(c)'
+        results_blank = db.query(q)
+         
+################## SEE IF THERE ARE LESS THAN X NUMBER OF CARDS IN THE HANDS ###################
+def check_num_cards_per_hand(cards_per_hand):
+    done = 1
+    q = 'MATCH (h:Hand) RETURN h.name'
+    results_3 = db.query(q, returns=(str))
+    for r in results_3:
+        name_of_the_hand = r[0]
+        print r[0]
+        q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (c:Card) WHERE (h)-[:CONTAINS]->(c) RETURN count(*)'
+        results_4 = db.query(q, returns=(int))
+        if results_4[0][0] != cards_per_hand:
+            done = 0
+    return done    
+        
 
 #####################################################################
 # Initialize Game Constants
@@ -209,21 +256,23 @@ done = 0
 while done == 0:  
     q = 'MATCH (h:Hand) WHERE (h)-[:CONTAINS]->(:Card) RETURN h.name, count(*)'  
     results = db.query(q, returns=(str, int))
+    
     if results.elements == []:
         #Add one card to each hand
         q = 'MATCH (h:Hand) RETURN h.name'
         results_2 = db.query(q, returns=(str))
         for r in results_2:
             name_of_the_hand = r[0]
-            add_top_card_to_a_hand(name_of_the_hand)
+            add_top_card_to_a_hand(name_of_the_hand,total_num_cards)
     else:
         for r in results:
             name_of_the_hand = r[0]
             cards_in_this_hand = r[1]
             while cards_in_this_hand < cards_per_hand:
-                add_top_card_to_a_hand(name_of_the_hand)
+                add_top_card_to_a_hand(name_of_the_hand,total_num_cards)
                 cards_in_this_hand += 1
-    
+    done = check_num_cards_per_hand(cards_per_hand)
+    # TODO: This way of implementing DONE is not ideal. Recommend improving/Fix later.   
      
 #####################################################################
 # PLAYERS OPEN THEIR EYES 
@@ -243,51 +292,3 @@ results = db.query(q)
 # PLAYERS STARTS TO THINK
 #####################################################################
 
-
-
-    
-
-#####################################################################
-# DEFINE FUNCTION: 
-###############################################################
-
-################## ADD TOP CARD TO THE HAND ###################
-def add_top_card_to_a_hand(name_of_the_hand):
-
-    # Find the name and order # of the top card
-    q = 'MATCH (c:Card) WHERE (:Token { name:"Top_Card" })-[:IS]->(c) RETURN c.name, c.order'
-    results_c_order = db.query(q, returns=(str, int))
-    
-    if results_c_order != []:
-        name_of_old_top_card = results_c_order[0][0]
-        order_of_top_card = results_c_order[0][1]
-        
-        if order_of_top_card < total_num_cards:
-            # Make the next card the top card
-            q = 'MATCH (t:Token {name:"Top_Card"}), (c:Card {order:' + str(order_of_top_card+1) + '}) CREATE (t)-[:IS]->(c)'
-            results_blank = db.query(q)
-    
-        # Remove the old top card from being the top card
-        q = 'START t=node(*) MATCH t-[rel:IS]->c WHERE t.name="Top_Card" AND c.name="' + name_of_old_top_card + '" DELETE rel'
-        results_blank = db.query(q)
-        # Remove the old top card from the deck
-        q = 'START d=node(*) MATCH d-[rel:CONTAINS]->c WHERE d.name = "Draw_Deck" AND c.name= "' + name_of_old_top_card + '" DELETE rel'
-        results_blank = db.query(q)
-
-        # Add that card to the present hand
-        q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (c:Card {name: "' + name_of_old_top_card + '" }) CREATE (h)-[:CONTAINS]->(c)'
-        results_blank = db.query(q)
-         
-################## SEE IF THERE ARE LESS THAN X NUMBER OF CARDS IN THE HANDS ###################
-def check_num_cards_per_hand():
-    done = 1
-    q = 'MATCH (h:Hand) RETURN h.name'
-    results_3 = db.query(q, returns=(str))
-    for r in results_3:
-        name_of_the_hand = r[0]
-        q = 'MATCH (h:Hand {name="' + name_of_the_hand + '") WHERE (h)-[:CONTAINS]->(:Card) RETURN count(*)'  
-        results_4 = db.query(q, returns=(int))
-        if results[0] != cards_per_hand:
-            done = 0
-    return done    
-        
