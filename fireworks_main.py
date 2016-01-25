@@ -12,6 +12,8 @@ from oct2py import octave
 from hanabi_classes import hanabi_card  # NOTE: Not sure if i need to do this.
 from hanabi_classes import hanabi_deck
 
+from operator import itemgetter, attrgetter, methodcaller
+
 ###############################################################
 # DEFINE FUNCTION: 
 ###############################################################
@@ -23,7 +25,7 @@ def add_top_card_to_a_hand(name_of_the_hand,total_num_cards):
     # Find the name and order # of the top card
     q = 'MATCH (c:Card) WHERE (:Token { name:"Top_Card" })-[:IS]->(c) RETURN c.name, c.order'
     results_c_order = db.query(q, returns=(str, int))
-    print results_c_order[0]
+    # print results_c_order[0]
     
     if results_c_order != []:
         name_of_old_top_card = results_c_order[0][0]
@@ -44,6 +46,18 @@ def add_top_card_to_a_hand(name_of_the_hand,total_num_cards):
         # Add that card to the present hand
         q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (c:Card {name: "' + name_of_old_top_card + '" }) CREATE (h)-[:CONTAINS]->(c)'
         results_blank = db.query(q)
+        
+        # Add card attributes as perceived by the player
+        q = 'MATCH (c:Card {name: "' + name_of_old_top_card + '" }) SET c.hand_order = { ' + 10 +'}'
+        results_blank = db.query(q)
+        
+        # Add the impressions the player has of the new card
+        ci_name = "Card_Idea_Next" # THERE SHOULD BE A WAY TO DO THIS
+        ci_node_name = db.nodes.create(name=ci_name, worth=0)
+        card.add(ci_node_name)
+        q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (p:Player), (c:Card {name: "' + name_of_old_top_card +'"), (ci:Card {name: "'+ ci_name +'"}) WHERE (p)-[:CONTROLS]->(h) CREATE (p)-[:KNOWS]->(ci) AND (ci)-[:REPRESENTS]->(c)'
+        results = db.query(q)
+        
          
 ################## SEE IF THERE ARE LESS THAN X NUMBER OF CARDS IN THE HANDS ###################
 def check_num_cards_per_hand(cards_per_hand):
@@ -52,14 +66,108 @@ def check_num_cards_per_hand(cards_per_hand):
     results_3 = db.query(q, returns=(str))
     for r in results_3:
         name_of_the_hand = r[0]
-        print r[0]
+        #print r[0]
         q = 'MATCH (h:Hand {name: "' + name_of_the_hand + '" }), (c:Card) WHERE (h)-[:CONTAINS]->(c) RETURN count(*)'
         results_4 = db.query(q, returns=(int))
         if results_4[0][0] != cards_per_hand:
             done = 0
     return done    
-        
+    
+###################################### REMOVE A CARD FROM YOUR HAND ########################################      
+def remove_a_card_from_hand(card_name):
 
+    q = 'MATCH (c:Card {name: "' + card_name + '"}, (ci:Card) WHERE (ci)-[:REPRESENTS]->(c) DELETE ci'
+    results = db.query(q)
+    
+    q = 'MATCH (c:Card {name: "' + card_name + '"}, (h:Hand) WHERE (h)-[rel:CONTAINS]->(c) DELETE rel'
+    results = db.query(q)
+    
+    q = 'MATCH (c:Card {name: "' + card_name + '"} REMOVE c.hand_order'
+    results = db.query(q)
+    
+###################################### PLACE CARD IN DISCARD PILE ##########################################      
+def discard_a_card(card_name):
+    
+    q = 'MATCH (c:Card {name: "' + card_name + '"}, (t:Token {name: "Discard_Deck"}) CREATE (t)-[:CONTAINS]->(c)'
+    results = db.query(q)
+    
+######################################## PLAY A CARD ###########################################      
+def play_a_card(card_name):
+    
+    q = 'MATCH (c:Card {name: "' + card_name + '"} RETURN c.color, c.value'
+    results = db.query(q, returns=(str, int))
+    card_color = results[0][0]
+    card_value = results[0][1]
+    
+    q = 'MATCH (d:Deck {color: "' + card_color + '"} RETURN d.name'
+    results = db.query(q, returns=(str))
+    
+    if results == []:
+        if card_value == 1:
+            col_node_name = card_color + ' Column'
+            column_node_name = db.nodes.create(name=col_node_name)
+            deck.add(col_node_name)
+            
+            q = 'MATCH (d:Deck {color: "' + card_color + '"}, (c:Card {name: "' + card_name + '"} CREATE (d)-[:CONTAINS]->(c)'
+            results_2 = db.query(q)
+            
+            q = 'MATCH (c:Card {name: "' + card_name + '" }) SET c.column_order = {"Top"}'
+            results_2 = db.query(q)
+        else:
+            q = 'MATCH (t:Token {type: "Wrong Answer"} WHERE t.used == False RETURN t.name'
+            results_3 = db.query(q)
+            if results_3 == []:
+                discard_a_card(card_name)
+                # THIS IS THE END OF THE GAME !!!!
+                # TODO: FIGURE OUT WHAT SHOULD BE HERE TO KILL THE GAME
+                
+            else:
+                q = 'MATCH (t:Token {name: "' + results_3[0] + '"} SET t.used = {True}'
+                results_4 = db.query(q)
+    else:
+        q = 'MATCH (d:Deck {color: "' + card_color + '"}, (c:Card {column_order: "Top"}) WHERE (d)-[:CONTAINS]->(c) RETURN c.name, c.value'
+        results_5 = db.query(q, returns=(str,int))
+        old_col_card_in_color_name = results_5[0][0]
+        old_col_card_in_color_value = results_5[0][0]
+        
+        if card_value == old_col_card_in_color_value + 1:
+            
+            q = 'MATCH (d:Deck {color: "' + card_color + '"}, (c:Card {name: "' + card_name + '"} CREATE (d)-[:CONTAINS]->(c)'
+            results_6 = db.query(q)
+            q = 'MATCH (c:Card {name: "' + card_name + '" }) SET c.column_order = {"Top"}'
+            results_6 = db.query(q)
+            q = 'MATCH (c:Card {name: "' + old_col_card_in_color_name + '" }) REMOVE c.column_order'
+            results_6 = db.query(q)
+        else: 
+            q = 'MATCH (t:Token {type: "Wrong Answer"} WHERE t.used == False RETURN t.name'
+            results_7 = db.query(q)
+            if results_7 == []:
+                discard_a_card(card_name)
+                # THIS IS THE END OF THE GAME !!!!
+                # TODO: FIGURE OUT WHAT SHOULD BE HERE TO KILL THE GAME
+            else:
+                q = 'MATCH (t:Token {name: "' + results_7[0] + '"} SET t.used = {True}'
+                results_8 = db.query(q)
+
+###################################### PLACE CARD IN DISCARD PILE ##########################################      
+def give_player_information(player_who_gets_info,info_type,info):
+    
+    
+######################################## SORT HAND ###########################################      
+def sort_hand(playing_player_name):
+    
+    # Find all the cards of a player
+    q = 'MATCH (p:Player {name: "' + playing_player_name + '" }) (h:Hand), (c:Card), (ci:Card) WHERE (p)-[:CONTROLS]-(h) AND (h)-[:CONTAINS]-(c) AND (ci)-[:REPRESENTS]->(c) RETURN c.name, ci.worth, c.hand_order'
+    results = db.query(q, returns=(str,int,int))
+    # Sort his cards by the perceived worth of each card
+    new_results =  sorted(results, key=itemgetter(1), reverse=True)
+    k = 0
+    # Re-order the cards
+    for c in new_results:
+        q = 'MATCH (c:Card {name: "' + c[0] + '"} SET c.hand_order = { "' + k + '"}'
+        results = db.query(q)
+        k += 1
+    
 #####################################################################
 # Initialize Game Constants
 #####################################################################
@@ -188,7 +296,7 @@ while k < num_info_tokens:
     i_node_name = "i" + str(key+1)
     info_token_list_names[key] = i_name 
     info_token_list_nodes[key] = i_node_name
-    i_node_name = db.nodes.create(name=i_name,used=False)
+    i_node_name = db.nodes.create(name=i_name,type:"Info",used=False)
     token.add(i_node_name)
     k += 1
     
@@ -200,7 +308,7 @@ while k < num_wrong_answer_tokens:
     wa_node_name = "wa" + str(key+1)
     w_answer_token_list_names[key] = wa_name 
     w_answer_token_list_nodes[key] = wa_node_name
-    wa_node_name = db.nodes.create(name=wa_name,used=False)
+    wa_node_name = db.nodes.create(name=wa_name,type:"Wrong Answer",used=False)
     token.add(wa_node_name)
     k += 1
     
@@ -216,7 +324,7 @@ while k < num_players:
     q = 'MATCH (p1:Player {name: "' + results[key][0] + '" }), (p2:Player {name: "' + results[key2][0] + '" }) CREATE (p1)-[:PLAYS_BEFORE]->(p2)'
     results_blank = db.query(q)
     if k == 0:
-        q = 'MATCH (t:Token {name: "Player_Turn" }), (p:Player {name: "' + results[key][0] + '" }) CREATE (t)-[:PIS]->(p)'
+        q = 'MATCH (t:Token {name: "Player_Turn" }), (p:Player {name: "' + results[key][0] + '" }) CREATE (t)-[:IS]->(p)'
     results_blank = db.query(q)
     k += 1 
        
@@ -253,6 +361,7 @@ for game_card in game_deck:
 
 done = 0
 # NOTE:  The following code is extremely non-ideal.  Make it better when you can figure out how to do it cleaner
+
 while done == 0:  
     q = 'MATCH (h:Hand) WHERE (h)-[:CONTAINS]->(:Card) RETURN h.name, count(*)'  
     results = db.query(q, returns=(str, int))
@@ -272,13 +381,33 @@ while done == 0:
                 add_top_card_to_a_hand(name_of_the_hand,total_num_cards)
                 cards_in_this_hand += 1
     done = check_num_cards_per_hand(cards_per_hand)
-    # TODO: This way of implementing DONE is not ideal. Recommend improving/Fix later.   
-     
+    # TODO: This way of implementing DONE is not ideal. Recommend improving/Fix later.
+
 #####################################################################
 # PLAYERS OPEN THEIR EYES 
 #####################################################################
-q = 'MATCH (h:Hand), (c:Card), (p:Player) WHERE NOT (h)-[:CONTAINS]->(c) AND NOT (:Deck { name:"Draw_Deck" })-[:CONTAINS]->(c) AND (p)-[:CONTROLS]->(h) CREATE (h)-[:CAN_SEE]->(c)'
+
+# See the other players Cards
+q = 'MATCH (h:Hand), (c:Card), (p:Player) WHERE NOT (h)-[:CONTAINS]->(c) AND NOT (:Deck { name:"Draw_Deck" })-[:CONTAINS]->(c) AND (p)-[:CONTROLS]->(h) CREATE (p)-[:CAN_SEE]->(c)'
 results = db.query(q)
+
+# Add players thoughts on cards
+q = 'MATCH (p:Player) RETURN p.name'  
+results = db.query(q, returns=(str))
+for p in results:
+    q = 'MATCH (p:Player {name: "' + p[0] + '" }), (h:Hand), (c:Card) WHERE (p)-[:CONTROLS]-(h) AND (h)-[:CONTAINS]-(c) RETURN c.name
+    results_2 = db.query(q, returns=(str))
+    k = 0
+    for pc in results_2:
+        key = k
+        ci_name = "Card_Idea_" + str(key+1)
+        ci_node_name = db.nodes.create(name=ci_name)
+        card.add(ci_node_name)
+        q = 'MATCH (p:Player {name: "' + p[0] + '" }), (c:Card {name: "' + pc[0] +'"), (ci:Card {name: "'+ ci_name +'"}) CREATE (p)-[:KNOWS]->(ci) AND (ci)-[:REPRESENTS]->(c)'
+        results = db.query(q)
+    
+    sort_hand(p[0])
+                 
 
 #######################################################################
 #######################################################################

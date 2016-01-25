@@ -4,7 +4,7 @@
 class Hanabi_Card(object):
     def __init__(self, number, color):
         """Return a hanabi_card object whose number is *number* and color is *color*""" 
-        self.number = number
+        self.number = int(number)
         self.color = color
         
     def get_number(self):
