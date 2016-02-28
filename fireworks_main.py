@@ -13,6 +13,7 @@ from hanabi_classes import hanabi_card  # NOTE: Not sure if i need to do this.
 from hanabi_classes import hanabi_deck
 
 from operator import itemgetter, attrgetter, methodcaller
+import sys
 
 ###############################################################
 # DEFINE FUNCTION: 
@@ -84,12 +85,19 @@ def remove_a_card_from_hand(card_name):
     
     q = 'MATCH (c:Card {name: "' + card_name + '"} REMOVE c.hand_order'
     results = db.query(q)
-    
+             
 ###################################### PLACE CARD IN DISCARD PILE ##########################################      
 def discard_a_card(card_name):
     
     q = 'MATCH (c:Card {name: "' + card_name + '"}, (t:Token {name: "Discard_Deck"}) CREATE (t)-[:CONTAINS]->(c)'
     results = db.query(q)
+    
+    # Flip Info Token
+    q = 'MATCH (t:Token {type: "Info"} WHERE t.used == True RETURN t.name'
+    results = db.query(q)
+    if results != []:
+        q = 'MATCH (t:Token {name: "' + results[0] + '} SET t.used = {False}'
+        results_2 = db.query(q)
     
 ######################################## PLAY A CARD ###########################################      
 def play_a_card(card_name):
@@ -117,9 +125,11 @@ def play_a_card(card_name):
             q = 'MATCH (t:Token {type: "Wrong Answer"} WHERE t.used == False RETURN t.name'
             results_3 = db.query(q)
             if results_3 == []:
-                discard_a_card(card_name)
+                q = 'MATCH (c:Card {name: "' + card_name + '"}, (t:Token {name: "Discard_Deck"}) CREATE (t)-[:CONTAINS]->(c)'
+                results_9 = db.query(q)
+                
                 # THIS IS THE END OF THE GAME !!!!
-                # TODO: FIGURE OUT WHAT SHOULD BE HERE TO KILL THE GAME
+                end_and_score_game()
                 
             else:
                 q = 'MATCH (t:Token {name: "' + results_3[0] + '"} SET t.used = {True}'
@@ -142,15 +152,37 @@ def play_a_card(card_name):
             q = 'MATCH (t:Token {type: "Wrong Answer"} WHERE t.used == False RETURN t.name'
             results_7 = db.query(q)
             if results_7 == []:
-                discard_a_card(card_name)
+                q = 'MATCH (c:Card {name: "' + card_name + '"}, (t:Token {name: "Discard_Deck"}) CREATE (t)-[:CONTAINS]->(c)'
+                results_9 = db.query(q)
                 # THIS IS THE END OF THE GAME !!!!
-                # TODO: FIGURE OUT WHAT SHOULD BE HERE TO KILL THE GAME
+                end_and_score_game()
             else:
                 q = 'MATCH (t:Token {name: "' + results_7[0] + '"} SET t.used = {True}'
                 results_8 = db.query(q)
 
 ###################################### PLACE CARD IN DISCARD PILE ##########################################      
 def give_player_information(player_who_gets_info,info_type,info):
+    
+    # Flip Info Token
+    q = 'MATCH (t:Token {type: "Info"} WHERE t.used == False RETURN t.name'
+    results = db.query(q)
+    
+    if results == []:
+        print "ERROR !!!! YOU HAVE NO MORE INFO TOKEN TO FLIP OVER!!!!!"
+        # TODO: PUT SOMETHING ELSE IN HERE   
+    else:
+        q = 'MATCH (t:Token {name: "' + results[0] + '"} SET t.used = {True}'
+        results = db.query(q)
+    
+        if info_type == "Color":
+            q = 'MATCH (p:Player {name: "' + player_who_gets_info + '"}, (ci:Card), (c:Card {color: "' + info + '") WHERE (p)-[:KNOWS]->(ci) AND (ci)-[:REPRESENTS]->(c) SET ci.color == {' + info + '}'
+            results = db.query(q)
+        else if info_type == "Value":
+            q = 'MATCH (p:Player {name: "' + player_who_gets_info + '"}, (ci:Card), (c:Card {value: "' + info + '") WHERE (p)-[:KNOWS]->(ci) AND (ci)-[:REPRESENTS]->(c) SET ci.value == {' + info + '}'
+            results = db.query(q)
+        else:
+            print "ERROR !!!! YOU NEVER SHOULD HAVE ARRIVED HERE !!!!"
+            # TODO: PUT SOMETHING ELSE IN HERE     
     
     
 ######################################## SORT HAND ###########################################      
@@ -167,6 +199,18 @@ def sort_hand(playing_player_name):
         q = 'MATCH (c:Card {name: "' + c[0] + '"} SET c.hand_order = { "' + k + '"}'
         results = db.query(q)
         k += 1
+        
+######################################## END GAME: SCORE TABLE ###########################################      
+def end_and_score_game():
+    
+    q = 'MATCH (c:Card {column_order: "Top" }) RETURN c.value'
+    results = db.query(q, returns=(int) )
+    k = 0
+    for r in results:
+        k = r + k
+    print "\nTHE GAME IS COMPLETE. THE SCORE WAS : " + k +".\n\n"
+    
+    sys.exit()
     
 #####################################################################
 # Initialize Game Constants
@@ -383,9 +427,10 @@ while done == 0:
     done = check_num_cards_per_hand(cards_per_hand)
     # TODO: This way of implementing DONE is not ideal. Recommend improving/Fix later.
 
-#####################################################################
-# PLAYERS OPEN THEIR EYES 
-#####################################################################
+
+########################################################################
+####                  PLAYERS OPEN THEIR EYES                       ####
+########################################################################
 
 # See the other players Cards
 q = 'MATCH (h:Hand), (c:Card), (p:Player) WHERE NOT (h)-[:CONTAINS]->(c) AND NOT (:Deck { name:"Draw_Deck" })-[:CONTAINS]->(c) AND (p)-[:CONTROLS]->(h) CREATE (p)-[:CAN_SEE]->(c)'
@@ -408,16 +453,8 @@ for p in results:
     
     sort_hand(p[0])
                  
-
 #######################################################################
 #######################################################################
 ######################## THE GAME BEGINS !!!!##########################
 #######################################################################
 #######################################################################
-
-
-
-#####################################################################
-# PLAYERS STARTS TO THINK
-#####################################################################
-
